@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "default": "ministack",
+  "deleted_env_names": [],
+  "endpoints": {
+    "ministack": {
+      "url": "http://cfc-ministack:4566",
+      "source": "env",
+      "region": null,
+      "auth_type": "default",
+      "auth_profile": null,
+      "auth_access_key_id": null,
+      "auth_secret_access_key": null
+    }
+  }
+}
