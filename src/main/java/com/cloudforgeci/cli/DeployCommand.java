@@ -7,7 +7,6 @@ import com.cloudforgeci.api.deploy.CloudForgeDeployment;
 import com.cloudforgeci.api.deploy.CloudForgeSynthesizer;
 import com.cloudforgeci.api.deploy.DeploymentRequest;
 import com.cloudforgeci.api.deploy.DeploymentResult;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -16,28 +15,19 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Non-interactive synth+deploy entry point — CloudForge Studio's bundled counterpart to
- * {@code InteractiveDeployer}'s own MiniStack/LocalStack deploy path (options 6/7/8), stripped of
- * every interactive menu since Studio drives this from a schema-collected deployment-context file
- * instead of a terminal prompt. One JSON object per line on stdout (a caller streaming this
- * process's output can render progress without scraping human-readable text); a non-zero exit
- * code and a final {@code "phase":"error"} line is the one failure contract callers need to
- * handle.
+ * {@code cloudforge-cli deploy} — non-interactive synth+deploy, CloudForge Studio's bundled
+ * counterpart to {@code InteractiveDeployer}'s own MiniStack/LocalStack deploy path (options
+ * 6/7/8), stripped of every interactive menu since Studio drives this from a schema-collected
+ * deployment-context file instead of a terminal prompt.
  *
  * <p>Deliberately real-AWS-target-less: {@code --target aws} is refused outright. Real AWS
  * self-deploys already have their own dedicated path (Manager's own {@code DirectDeployService}),
  * and refusing here keeps this tool's blast radius — and its entitlement/licensing surface —
  * confined to the local-emulator bootstrap it exists for.</p>
  */
-public final class DeployCli {
+final class DeployCommand {
 
-    private static final ObjectMapper JSON = new ObjectMapper();
-
-    private DeployCli() {
-    }
-
-    public static void main(String[] args) {
-        System.exit(run(args));
+    private DeployCommand() {
     }
 
     static int run(String[] args) {
@@ -48,7 +38,7 @@ public final class DeployCli {
             contextFile = parsed.contextFile();
             target = parsed.target();
         } catch (IllegalArgumentException e) {
-            emit("usage", "error", Map.of("message", e.getMessage()));
+            Json.emit("usage", "error", Map.of("message", e.getMessage()));
             return 1;
         }
 
@@ -57,34 +47,34 @@ public final class DeployCli {
             config = DeploymentConfig.fromFile(contextFile);
             ApplicationPropertyLoader.applyPropertyDefaults(config);
         } catch (IOException e) {
-            emit("load", "error", Map.of("message", "Could not read " + contextFile + ": " + e.getMessage()));
+            Json.emit("load", "error", Map.of("message", "Could not read " + contextFile + ": " + e.getMessage()));
             return 1;
         }
 
-        emit("synth", "started", Map.of("stackName", String.valueOf(config.stackName)));
+        Json.emit("synth", "started", Map.of("stackName", String.valueOf(config.stackName)));
         CloudForgeSynthesizer.Result synthesis;
         try {
             Path outputDirectory = Files.createTempDirectory("cfc-deploy-cli-");
             synthesis = CloudForgeSynthesizer.synthesize(config, outputDirectory);
         } catch (IOException | RuntimeException e) {
-            emit("synth", "error", Map.of("message", String.valueOf(e.getMessage())));
+            Json.emit("synth", "error", Map.of("message", String.valueOf(e.getMessage())));
             return 2;
         }
-        emit("synth", "complete", Map.of("stackName", synthesis.stackName()));
+        Json.emit("synth", "complete", Map.of("stackName", synthesis.stackName()));
 
-        emit("deploy", "started", Map.of("stackName", synthesis.stackName()));
+        Json.emit("deploy", "started", Map.of("stackName", synthesis.stackName()));
         DeploymentResult result;
         try {
             DeploymentRequest request = DeploymentRequest.deploy(
                 config, target, synthesis.templateFile(), synthesis.assemblyDirectory());
             result = CloudForgeDeployment.deploy(request);
         } catch (IOException | RuntimeException e) {
-            emit("deploy", "error", Map.of("message", String.valueOf(e.getMessage())));
+            Json.emit("deploy", "error", Map.of("message", String.valueOf(e.getMessage())));
             return 3;
         }
 
         if (!result.success()) {
-            emit("deploy", "error", Map.of(
+            Json.emit("deploy", "error", Map.of(
                 "message", "Deploy reported failure",
                 "messages", result.messages()));
             return 3;
@@ -96,24 +86,8 @@ public final class DeployCli {
         complete.put("outputs", result.outputs());
         complete.put("messages", result.messages());
         result.warning().ifPresent(w -> complete.put("warning", w));
-        emit("deploy", "complete", complete);
+        Json.emit("deploy", "complete", complete);
         return 0;
-    }
-
-    /** One JSON object per line, no pretty-printing — this is a machine protocol, not a console
-     *  report. Falls back to a plain stderr line if JSON encoding itself somehow fails, since a
-     *  caller streaming stdout must never see a torn/partial line. */
-    private static void emit(String phase, String status, Map<String, ?> fields) {
-        Map<String, Object> line = new LinkedHashMap<>();
-        line.put("phase", phase);
-        line.put("status", status);
-        line.putAll(fields);
-        try {
-            System.out.println(JSON.writeValueAsString(line));
-            System.out.flush();
-        } catch (IOException e) {
-            System.err.println("[" + phase + "/" + status + "] " + fields);
-        }
     }
 
     record Arguments(Path contextFile, DeploymentTarget target) {
@@ -135,7 +109,7 @@ public final class DeployCli {
             }
             if (context == null || context.isBlank()) {
                 throw new IllegalArgumentException(
-                    "Usage: DeployCli --context <deployment-context.json> --target <ministack|localstack>");
+                    "Usage: cloudforge-cli deploy --context <deployment-context.json> --target <ministack|localstack>");
             }
             DeploymentTarget target = DeploymentTarget.fromConfigKey(targetArg);
             if (target == DeploymentTarget.AWS) {

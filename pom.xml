@@ -25,7 +25,7 @@
        code, reusing the same synth+deploy recipe cfc-testing's InteractiveDeployer already calls
        for its own MiniStack/LocalStack options. -->
   <artifactId>cloudforge-cli</artifactId>
-  <version>0.1.0-SNAPSHOT</version>
+  <version>0.2.0-SNAPSHOT</version>
   <packaging>jar</packaging>
   <name>CloudForge CLI</name>
   <description>
@@ -167,7 +167,7 @@
         <configuration>
           <archive>
             <manifest>
-              <mainClass>com.cloudforgeci.cli.DeployCli</mainClass>
+              <mainClass>com.cloudforgeci.cli.Main</mainClass>
             </manifest>
           </archive>
         </configuration>

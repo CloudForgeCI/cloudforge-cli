@@ -20,13 +20,14 @@ cp -r target/dependency "$STAGE/dependency"
 
 cat > "$STAGE/bin/cloudforge-cli" <<'SCRIPT'
 #!/usr/bin/env bash
-# Launches DeployCli on the classpath this release ships -- java -cp classes:dependency/*,
-# the same classpath-launch convention cfc-testing's InteractiveDeployer and
-# cloudforge-synth-service already use, no shaded jar. Requires `java` (25+) and `node` on
-# PATH; jsii/aws-cdk-lib synthesis spawns node itself, this wrapper never touches it directly.
+# Launches Main (deploy/emulator subcommand dispatch) on the classpath this release ships --
+# java -cp classes:dependency/*, the same classpath-launch convention cfc-testing's
+# InteractiveDeployer and cloudforge-synth-service already use, no shaded jar. Requires `java`
+# (25+) and `node` on PATH; jsii/aws-cdk-lib synthesis (the `deploy` subcommand only) spawns node
+# itself, this wrapper never touches it directly.
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-exec java -cp "$DIR/classes:$DIR/dependency/*" com.cloudforgeci.cli.DeployCli "$@"
+exec java -cp "$DIR/classes:$DIR/dependency/*" com.cloudforgeci.cli.Main "$@"
 SCRIPT
 chmod +x "$STAGE/bin/cloudforge-cli"
 
