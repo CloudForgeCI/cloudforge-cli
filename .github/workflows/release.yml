@@ -1,0 +1,222 @@
+name: Auto-release on upstream cfc-core changes
+
+# cloudforge-cli bundles cloudforge-core/cloudforge-api/cloudforge-localstack/cloudforge-ministack/
+# cloudforge-manager-deployment as target/dependency/*.jar inside its own release tarball (see
+# scripts/assemble-release.sh) rather than resolving them at install time -- a `brew install`
+# tomorrow gets whatever was resolved at the LAST release, not whatever cfc-core looks like today.
+# This workflow is what keeps that from silently going stale: on a schedule, it checks the public
+# Central snapshots repository for a newer version of either dependency family than what pom.xml
+# currently pins, and if there is one, bumps pom.xml, rebuilds, cuts a new GitHub release, and
+# opens a PR against the homebrew-tap repo bumping the formula to match. No-ops (skips every
+# downstream step) when nothing upstream has actually changed, so this doesn't spam a release on
+# every scheduled run -- only when there's real new content to ship.
+#
+#   1. check-upstream — reads pom.xml's current cfc-core.version/cloudforge-manager-deployment.version
+#      properties, compares against each artifact's own maven-metadata.xml <latest> on the public
+#      snapshots repo. Nothing downstream runs unless at least one is newer.
+#   2. release        — bumps the changed propertie(s) on a branch, builds+tests against the new
+#      versions, tags and publishes a GitHub release off that branch, then opens and immediately
+#      merges a PR landing the same bump on develop. develop is protected (no direct pushes, this
+#      repo included) -- a PR is how even this workflow's own commit gets there, same as every
+#      other CloudForgeCI repo.
+#   3. update-tap     — opens (and merges) a PR against CloudForgeCI/homebrew-tap bumping the
+#      formula's url/sha256/version to the release this run just published; that repo's develop is
+#      equally protected.
+#
+# Required repo secret:
+#   HOMEBREW_TAP_TOKEN — a fine-grained PAT scoped to CloudForgeCI/homebrew-tap with Contents:
+#   Read & write and Pull requests: Read & write. The default GITHUB_TOKEN can push/tag/release/
+#   open+merge PRs in THIS repo but has no access to homebrew-tap, a different repo.
+
+on:
+  schedule:
+    - cron: '0 13 * * 1,4' # twice a week (Mon/Thu 13:00 UTC) -- cheap enough to run often, and
+                            # the no-op check above means an unchanged week costs nothing but a
+                            # few seconds of runner time.
+  workflow_dispatch: {}
+
+permissions:
+  contents: write      # tag + release + push the bump branch in this repo
+  pull-requests: write # open/merge the bump PR against develop
+
+jobs:
+  check-upstream:
+    name: Check for newer cfc-core/manager-deployment snapshots
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+      new-cfc-core-version: ${{ steps.diff.outputs.new_cfc_core_version }}
+      new-manager-deployment-version: ${{ steps.diff.outputs.new_manager_deployment_version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare pinned vs. latest published snapshot versions
+        id: diff
+        run: |
+          # Reads pom.xml's properties directly with grep rather than `mvn help:evaluate` -- this
+          # job never sets up a JDK, since it's nothing but a version string comparison.
+          CURRENT_CFC_CORE="$(grep -m1 -oE '<cfc-core.version>[^<]+' pom.xml | cut -d'>' -f2)"
+          CURRENT_MANAGER_DEPLOYMENT="$(grep -m1 -oE '<cloudforge-manager-deployment.version>[^<]+' pom.xml | cut -d'>' -f2)"
+
+          LATEST_CFC_CORE="$(curl -sf https://central.sonatype.com/repository/maven-snapshots/com/cloudforgeci/cloudforge-core/maven-metadata.xml | grep -oE '<latest>[^<]+' | cut -d'>' -f2)"
+          LATEST_MANAGER_DEPLOYMENT="$(curl -sf https://central.sonatype.com/repository/maven-snapshots/com/cloudforgeci/cloudforge-manager-deployment/maven-metadata.xml | grep -oE '<latest>[^<]+' | cut -d'>' -f2)"
+
+          echo "Pinned:  cfc-core=$CURRENT_CFC_CORE  manager-deployment=$CURRENT_MANAGER_DEPLOYMENT"
+          echo "Latest:  cfc-core=$LATEST_CFC_CORE  manager-deployment=$LATEST_MANAGER_DEPLOYMENT"
+
+          if [ -z "$LATEST_CFC_CORE" ] || [ -z "$LATEST_MANAGER_DEPLOYMENT" ]; then
+            echo "::error::Could not read maven-metadata.xml for one or both artifacts."
+            exit 1
+          fi
+
+          if [ "$CURRENT_CFC_CORE" != "$LATEST_CFC_CORE" ] || [ "$CURRENT_MANAGER_DEPLOYMENT" != "$LATEST_MANAGER_DEPLOYMENT" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "new_cfc_core_version=$LATEST_CFC_CORE" >> "$GITHUB_OUTPUT"
+          echo "new_manager_deployment_version=$LATEST_MANAGER_DEPLOYMENT" >> "$GITHUB_OUTPUT"
+
+  release:
+    name: Bump, build, and release
+    needs: check-upstream
+    if: needs.check-upstream.outputs.changed == 'true'
+    runs-on: macos-latest # assemble-release.sh's tarball layout/wrapper script targets macOS,
+                           # same as the manually-built release this workflow's steps mirror.
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.version.outputs.new_version }}
+      tarball: ${{ steps.assemble.outputs.tarball }}
+      sha256: ${{ steps.assemble.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need full tag history to compute the next release number
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Bump pinned versions and the <parent> version
+        env:
+          NEW_CFC_CORE_VERSION: ${{ needs.check-upstream.outputs.new-cfc-core-version }}
+          NEW_MANAGER_DEPLOYMENT_VERSION: ${{ needs.check-upstream.outputs.new-manager-deployment-version }}
+        run: |
+          sed -i '' "s#<cfc-core.version>[^<]*</cfc-core.version>#<cfc-core.version>${NEW_CFC_CORE_VERSION}</cfc-core.version>#" pom.xml
+          sed -i '' "s#<cloudforge-manager-deployment.version>[^<]*</cloudforge-manager-deployment.version>#<cloudforge-manager-deployment.version>${NEW_MANAGER_DEPLOYMENT_VERSION}</cloudforge-manager-deployment.version>#" pom.xml
+          # The <parent> block's own <version> is the only place cfc-core's release/BOM version is
+          # still a literal rather than a property (Maven doesn't reliably interpolate properties
+          # inside <parent><version>) -- keep it in lockstep with cfc-core.version by targeting the
+          # specific 3-line <parent> block, not any other <version> tag in the file.
+          perl -0pi -e "s#(<artifactId>cfc-core</artifactId>\s*<version>)[^<]*(</version>)#\${1}${NEW_CFC_CORE_VERSION}\${2}#" pom.xml
+
+      - name: Commit the dependency bump to a branch
+        id: bump-branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          BRANCH="bump-cfc-core-${{ needs.check-upstream.outputs.new-cfc-core-version }}"
+          git checkout -b "$BRANCH"
+          git add pom.xml
+          git commit -m "chore: bump cfc-core to ${{ needs.check-upstream.outputs.new-cfc-core-version }}, cloudforge-manager-deployment to ${{ needs.check-upstream.outputs.new-manager-deployment-version }}"
+          git push origin "$BRANCH"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Build and test against the bumped versions
+        run: mvn -B clean verify
+
+      - name: Compute next release version
+        id: version
+        run: |
+          POM_VERSION="$(mvn -q help:evaluate -Dexpression=project.version -DforceStdout)"
+          BASE="${POM_VERSION%-SNAPSHOT}"
+          MAJOR_MINOR="$(echo "$BASE" | cut -d. -f1-2)"
+          LATEST_TAG="$(git tag -l "v${MAJOR_MINOR}.*" | sort -t. -k3 -n | tail -1)"
+          if [ -z "$LATEST_TAG" ]; then
+            NEXT_PATCH=0
+          else
+            LAST_PATCH="${LATEST_TAG##*.}"
+            NEXT_PATCH=$((LAST_PATCH + 1))
+          fi
+          NEW_VERSION="${MAJOR_MINOR}.${NEXT_PATCH}"
+          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing v$NEW_VERSION (pom.xml stays $POM_VERSION -- only the release artifact/tag get a concrete number, same as cfc-core's own release job)"
+
+      - name: Set release version for packaging (not committed)
+        run: mvn -q versions:set -DnewVersion=${{ steps.version.outputs.new_version }} -DgenerateBackupPoms=false
+
+      - name: Assemble the release tarball
+        id: assemble
+        run: |
+          ./scripts/assemble-release.sh
+          echo "tarball=release/cloudforge-cli-${{ steps.version.outputs.new_version }}-darwin.tar.gz" >> "$GITHUB_OUTPUT"
+          SHA256="$(shasum -a 256 "release/cloudforge-cli-${{ steps.version.outputs.new_version }}-darwin.tar.gz" | awk '{print $1}')"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+
+      - name: Tag and publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git tag "v${{ steps.version.outputs.new_version }}"
+          git push origin "v${{ steps.version.outputs.new_version }}"
+          NOTES="$(printf 'Automated release: bumps cloudforge-core/cloudforge-api/cloudforge-localstack/cloudforge-ministack to %s and cloudforge-manager-deployment to %s.\n\nRequires Java 25+ and Node.js on PATH (jsii/aws-cdk-lib synthesis spawns node itself).\n\nUsage: cloudforge-cli --context <deployment-context.json> --target <ministack|localstack>' \
+            "${{ needs.check-upstream.outputs.new-cfc-core-version }}" \
+            "${{ needs.check-upstream.outputs.new-manager-deployment-version }}")"
+          gh release create "v${{ steps.version.outputs.new_version }}" \
+            "${{ steps.assemble.outputs.tarball }}" \
+            --title "v${{ steps.version.outputs.new_version }}" \
+            --notes "$NOTES"
+
+      - name: Land the bump on develop via PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr create --base develop --head "${{ steps.bump-branch.outputs.branch }}" \
+            --title "chore: bump cfc-core to ${{ needs.check-upstream.outputs.new-cfc-core-version }}" \
+            --body "Automated bump -- already built, tested, and released as [v${{ steps.version.outputs.new_version }}](https://github.com/${{ github.repository }}/releases/tag/v${{ steps.version.outputs.new_version }})."
+          gh pr merge "${{ steps.bump-branch.outputs.branch }}" --merge --delete-branch
+
+  update-tap:
+    name: Open a PR bumping the homebrew-tap formula
+    needs: [ check-upstream, release ]
+    if: needs.check-upstream.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: CloudForgeCI/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Bump the formula
+        env:
+          NEW_VERSION: ${{ needs.release.outputs.version }}
+          NEW_SHA256: ${{ needs.release.outputs.sha256 }}
+        run: |
+          sed -i \
+            -e "s#url \".*\"#url \"https://github.com/CloudForgeCI/cloudforge-cli/releases/download/v${NEW_VERSION}/cloudforge-cli-${NEW_VERSION}-darwin.tar.gz\"#" \
+            -e "s#sha256 \".*\"#sha256 \"${NEW_SHA256}\"#" \
+            -e "s#version \".*\"#version \"${NEW_VERSION}\"#" \
+            Formula/cloudforge-cli.rb
+
+      - name: Open the PR
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          NEW_VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          BRANCH="bump-cloudforge-cli-${NEW_VERSION}"
+          git checkout -b "$BRANCH"
+          git add Formula/cloudforge-cli.rb
+          git commit -m "cloudforge-cli ${NEW_VERSION}"
+          git push origin "$BRANCH"
+          gh pr create --repo CloudForgeCI/homebrew-tap \
+            --base develop --head "$BRANCH" \
+            --title "cloudforge-cli ${NEW_VERSION}" \
+            --body "Automated bump, triggered by CloudForgeCI/cloudforge-cli's release.yml publishing [v${NEW_VERSION}](https://github.com/CloudForgeCI/cloudforge-cli/releases/tag/v${NEW_VERSION})."
+          gh pr merge --repo CloudForgeCI/homebrew-tap "$BRANCH" --merge --delete-branch
