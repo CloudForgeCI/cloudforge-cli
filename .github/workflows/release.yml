@@ -175,6 +175,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # The packaging step above ran `mvn versions:set` deliberately without committing it
+          # (see that step's own comment) -- that leaves pom.xml locally modified, which makes
+          # `gh pr merge`'s own post-merge local-branch sync fail ("local changes ... would be
+          # overwritten by checkout") even though the remote merge itself already succeeded.
+          # Discard it now; nothing after this step reads the working tree again.
+          git checkout -- pom.xml
           gh pr create --base develop --head "${{ steps.bump-branch.outputs.branch }}" \
             --title "chore: bump cfc-core to ${{ needs.check-upstream.outputs.new-cfc-core-version }}" \
             --body "Automated bump -- already built, tested, and released as [v${{ steps.version.outputs.new_version }}](https://github.com/${{ github.repository }}/releases/tag/v${{ steps.version.outputs.new_version }})."
