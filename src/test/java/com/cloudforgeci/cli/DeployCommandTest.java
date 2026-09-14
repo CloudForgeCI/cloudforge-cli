@@ -8,11 +8,11 @@ import java.nio.file.Path;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-class DeployCliTest {
+class DeployCommandTest {
 
     @Test
     void parsesContextAndTarget() {
-        DeployCli.Arguments args = DeployCli.Arguments.parse(
+        DeployCommand.Arguments args = DeployCommand.Arguments.parse(
             new String[] {"--context", "deployment-context.json", "--target", "ministack"});
 
         assertEquals(Path.of("deployment-context.json"), args.contextFile());
@@ -22,32 +22,32 @@ class DeployCliTest {
     @Test
     void missingContextIsRejected() {
         assertThrows(IllegalArgumentException.class,
-            () -> DeployCli.Arguments.parse(new String[] {"--target", "ministack"}));
+            () -> DeployCommand.Arguments.parse(new String[] {"--target", "ministack"}));
     }
 
     @Test
     void awsTargetIsRejected() {
         // Real AWS self-deploys go through Manager's own DirectDeployService, not this tool --
-        // see DeployCli's own class javadoc for why.
+        // see DeployCommand's own class javadoc for why.
         assertThrows(IllegalArgumentException.class,
-            () -> DeployCli.Arguments.parse(new String[] {"--context", "x.json", "--target", "aws"}));
+            () -> DeployCommand.Arguments.parse(new String[] {"--context", "x.json", "--target", "aws"}));
     }
 
     @Test
     void omittedTargetDefaultsToAwsAndIsThenRejected() {
         assertThrows(IllegalArgumentException.class,
-            () -> DeployCli.Arguments.parse(new String[] {"--context", "x.json"}));
+            () -> DeployCommand.Arguments.parse(new String[] {"--context", "x.json"}));
     }
 
     @Test
     void unknownFlagIsRejected() {
         assertThrows(IllegalArgumentException.class,
-            () -> DeployCli.Arguments.parse(new String[] {"--bogus", "value"}));
+            () -> DeployCommand.Arguments.parse(new String[] {"--bogus", "value"}));
     }
 
     @Test
     void flagMissingItsValueIsRejected() {
         assertThrows(IllegalArgumentException.class,
-            () -> DeployCli.Arguments.parse(new String[] {"--context"}));
+            () -> DeployCommand.Arguments.parse(new String[] {"--context"}));
     }
 }
