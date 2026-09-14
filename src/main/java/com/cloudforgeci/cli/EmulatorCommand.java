@@ -11,7 +11,6 @@ import com.cloudforge.core.local.StackPortRuntimes;
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -76,16 +75,33 @@ final class EmulatorCommand {
     }
 
     private static int lifecycle(EmulatorLifecycleAction action, DeploymentTarget target) {
-        String verb = action.name().toLowerCase(Locale.ROOT);
-        Json.emit("emulator", verb + "ing", Map.of("target", target.configKey()));
+        Json.emit("emulator", presentParticiple(action), Map.of("target", target.configKey()));
         try {
             EmulatorLifecycle.execute(target, action);
         } catch (IOException | RuntimeException e) {
             Json.emit("emulator", "error", Map.of("target", target.configKey(), "message", String.valueOf(e.getMessage())));
             return 2;
         }
-        Json.emit("emulator", verb + "ed", statusFields(target));
+        Json.emit("emulator", pastTense(action), statusFields(target));
         return 0;
+    }
+
+    private static String presentParticiple(EmulatorLifecycleAction action) {
+        return switch (action) {
+            case START -> "starting";
+            case STOP -> "stopping";
+            case RESTART -> "restarting";
+            case STATUS -> "checking";
+        };
+    }
+
+    private static String pastTense(EmulatorLifecycleAction action) {
+        return switch (action) {
+            case START -> "started";
+            case STOP -> "stopped";
+            case RESTART -> "restarted";
+            case STATUS -> "checked";
+        };
     }
 
     private static int status(String targetArg) {
