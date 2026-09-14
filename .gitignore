@@ -1,3 +1,7 @@
 /target/
 /release/
 .DS_Store
+.localstack-volumes/
+.stackport-volumes/
+.emulator-edge/
+cdk.out*/
