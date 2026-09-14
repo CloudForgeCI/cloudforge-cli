@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.cloudforgeci</groupId>
+    <artifactId>cfc-core</artifactId>
+    <version>3.2.13-SNAPSHOT</version>
+    <!-- Empty on purpose: this repo split out of cfc-core's own reactor, so there's no sibling
+         checkout to find a local pom.xml at anymore; the parent resolves from the repository
+         (Central snapshots / whatever's already `mvn install`ed locally), never from a relative
+         path on disk. Bump the version above whenever cfc-core's own develop branch bumps, same
+         as cloudforge-synth-service's own equivalent pin; a stale pin here resolves to a snapshot
+         that no longer receives cfc-core's newest published content. -->
+    <relativePath/>
+  </parent>
+
+  <!-- Non-interactive, single-purpose synth+deploy entry point for MiniStack/LocalStack: given a
+       deployment-context JSON file and a target, synth and deploy that application, one JSON line
+       of progress per step on stdout, a real process exit code. Split out of cfc-core's own
+       Maven reactor into this standalone repo from the start, same reasoning as
+       cloudforge-synth-service's own split (see that pom's own comment): a public, independently
+       released tool meant for direct distribution (a Homebrew tap) and for CloudForge Studio to
+       bundle into its own app, rather than something tied to cfc-core's own release cadence.
+       No proprietary content of its own — a thin wrapper around already-public cloudforge-api
+       code, reusing the same synth+deploy recipe cfc-testing's InteractiveDeployer already calls
+       for its own MiniStack/LocalStack options. -->
+  <artifactId>cloudforge-cli</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <packaging>jar</packaging>
+  <name>CloudForge CLI</name>
+  <description>
+    Non-interactive synth+deploy tool for CloudForge applications against MiniStack/LocalStack —
+    the standalone counterpart to cfc-testing/cloudforge-sample's InteractiveDeployer, meant for
+    direct installation (Homebrew) or bundling into CloudForge Studio without a full cfc-core
+    checkout.
+  </description>
+
+  <!-- Maven doesn't check the Central Portal's snapshots URL by default, and inheriting it from
+       the parent above doesn't help here: resolving that <parent> declaration in the first place
+       is exactly what needs this repository, before anything can be inherited from it. Same
+       repository cloudforge-manager's and cloudforge-synth-service's own pom.xml declare for the
+       identical reason. -->
+  <repositories>
+    <repository>
+      <id>central-snapshots</id>
+      <url>https://central.sonatype.com/repository/maven-snapshots/</url>
+      <releases><enabled>false</enabled></releases>
+      <snapshots><enabled>true</enabled></snapshots>
+    </repository>
+  </repositories>
+
+  <dependencies>
+    <!-- Explicit versions, not inherited from the parent's dependencyManagement (which uses
+         ${project.version}, a BOM pattern that only tracks the parent's real version for a
+         same-version reactor sibling; this project's own <version> above is intentionally
+         independent of cfc-core's). Bump these whenever cfc-core's own develop branch bumps, same
+         as cloudforge-synth-service's own equivalent pins. -->
+    <dependency>
+      <groupId>com.cloudforgeci</groupId>
+      <artifactId>cloudforge-api</artifactId>
+      <version>3.2.13-SNAPSHOT</version>
+    </dependency>
+    <dependency>
+      <groupId>com.cloudforgeci</groupId>
+      <artifactId>cloudforge-core</artifactId>
+      <version>3.2.13-SNAPSHOT</version>
+    </dependency>
+    <!-- MiniStack/LocalStack adapter/deployer/pipeline logic — the two targets this tool
+         actually serves (real AWS deploys stay Manager's own DirectDeployService's job). -->
+    <dependency>
+      <groupId>com.cloudforgeci</groupId>
+      <artifactId>cloudforge-ministack</artifactId>
+      <version>3.2.13-SNAPSHOT</version>
+    </dependency>
+    <dependency>
+      <groupId>com.cloudforgeci</groupId>
+      <artifactId>cloudforge-localstack</artifactId>
+      <version>3.2.13-SNAPSHOT</version>
+    </dependency>
+    <!-- CloudForgeManagerApplicationSpec — this tool's one real job today is bootstrapping
+         cloudforge-manager itself into a freshly-started emulator; without this dependency
+         "cloudforge-manager" isn't a deployable applicationId at all. Private repo/artifact,
+         unlike every other dependency here — matches cfc-testing's own equivalent declaration. -->
+    <dependency>
+      <groupId>com.cloudforgeci</groupId>
+      <artifactId>cloudforge-manager-deployment</artifactId>
+      <version>3.2.8-SNAPSHOT</version>
+    </dependency>
+    <dependency>
+      <groupId>software.amazon.awscdk</groupId>
+      <artifactId>aws-cdk-lib</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>software.constructs</groupId>
+      <artifactId>constructs</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+    </dependency>
+    <!-- Same Maven-mediation note as cfc-testing's own copy of these: a direct, non-test-scoped
+         declaration here is what cloudforge-localstack/cloudforge-ministack's own real deploy
+         path actually needs at runtime — an inherited/test-scoped one is silently shadowed. -->
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>cloudformation</artifactId>
+      <version>2.25.0</version>
+    </dependency>
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>ec2</artifactId>
+      <version>2.25.0</version>
+    </dependency>
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>iam</artifactId>
+      <version>2.25.0</version>
+    </dependency>
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>cognitoidentityprovider</artifactId>
+      <version>2.25.0</version>
+    </dependency>
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>rds</artifactId>
+      <version>2.25.0</version>
+    </dependency>
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>ecs</artifactId>
+      <version>2.25.0</version>
+    </dependency>
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>elasticloadbalancingv2</artifactId>
+      <version>2.25.0</version>
+    </dependency>
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>route53</artifactId>
+      <version>2.25.0</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <configuration>
+          <archive>
+            <manifest>
+              <mainClass>com.cloudforgeci.cli.DeployCli</mainClass>
+            </manifest>
+          </archive>
+        </configuration>
+      </plugin>
+      <!-- Same shape cfc-testing/InteractiveDeployer and cloudforge-synth-service already run
+           with: `java -cp target/classes:target/dependency/* MainClass`, no shade plugin needed
+           — CloudForge Studio bundles this same target/classes + target/dependency tree
+           directly into its own app. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>copy-dependencies</id>
+            <phase>prepare-package</phase>
+            <goals><goal>copy-dependencies</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/dependency</outputDirectory>
+              <includeScope>runtime</includeScope>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>
