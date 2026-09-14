@@ -4,7 +4,7 @@
   <parent>
     <groupId>com.cloudforgeci</groupId>
     <artifactId>cfc-core</artifactId>
-    <version>3.2.13-SNAPSHOT</version>
+    <version>3.2.14-SNAPSHOT</version>
     <!-- Empty on purpose: this repo split out of cfc-core's own reactor, so there's no sibling
          checkout to find a local pom.xml at anymore; the parent resolves from the repository
          (Central snapshots / whatever's already `mvn install`ed locally), never from a relative
@@ -35,6 +35,16 @@
     checkout.
   </description>
 
+  <!-- One property per independent release cadence, not a version literal per dependency —
+       .github/workflows/release.yml reads/bumps these two lines (plus the <parent> version
+       above) to track cfc-core's own snapshot metadata, the same two-cadence split
+       cloudforge-manager's own pom.xml already keeps (see its own
+       cloudforge-manager-deployment.version comment). -->
+  <properties>
+    <cfc-core.version>3.2.14-SNAPSHOT</cfc-core.version>
+    <cloudforge-manager-deployment.version>3.2.10-SNAPSHOT</cloudforge-manager-deployment.version>
+  </properties>
+
   <!-- Maven doesn't check the Central Portal's snapshots URL by default, and inheriting it from
        the parent above doesn't help here: resolving that <parent> declaration in the first place
        is exactly what needs this repository, before anything can be inherited from it. Same
@@ -58,24 +68,24 @@
     <dependency>
       <groupId>com.cloudforgeci</groupId>
       <artifactId>cloudforge-api</artifactId>
-      <version>3.2.13-SNAPSHOT</version>
+      <version>${cfc-core.version}</version>
     </dependency>
     <dependency>
       <groupId>com.cloudforgeci</groupId>
       <artifactId>cloudforge-core</artifactId>
-      <version>3.2.13-SNAPSHOT</version>
+      <version>${cfc-core.version}</version>
     </dependency>
     <!-- MiniStack/LocalStack adapter/deployer/pipeline logic — the two targets this tool
          actually serves (real AWS deploys stay Manager's own DirectDeployService's job). -->
     <dependency>
       <groupId>com.cloudforgeci</groupId>
       <artifactId>cloudforge-ministack</artifactId>
-      <version>3.2.13-SNAPSHOT</version>
+      <version>${cfc-core.version}</version>
     </dependency>
     <dependency>
       <groupId>com.cloudforgeci</groupId>
       <artifactId>cloudforge-localstack</artifactId>
-      <version>3.2.13-SNAPSHOT</version>
+      <version>${cfc-core.version}</version>
     </dependency>
     <!-- CloudForgeManagerApplicationSpec — this tool's one real job today is bootstrapping
          cloudforge-manager itself into a freshly-started emulator; without this dependency
@@ -84,7 +94,7 @@
     <dependency>
       <groupId>com.cloudforgeci</groupId>
       <artifactId>cloudforge-manager-deployment</artifactId>
-      <version>3.2.8-SNAPSHOT</version>
+      <version>${cloudforge-manager-deployment.version}</version>
     </dependency>
     <dependency>
       <groupId>software.amazon.awscdk</groupId>
