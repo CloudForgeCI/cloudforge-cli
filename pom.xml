@@ -4,7 +4,7 @@
   <parent>
     <groupId>com.cloudforgeci</groupId>
     <artifactId>cfc-core</artifactId>
-    <version>3.2.14-SNAPSHOT</version>
+    <version>3.2.15-SNAPSHOT</version>
     <!-- Empty on purpose: this repo split out of cfc-core's own reactor, so there's no sibling
          checkout to find a local pom.xml at anymore; the parent resolves from the repository
          (Central snapshots / whatever's already `mvn install`ed locally), never from a relative
@@ -41,7 +41,7 @@
        cloudforge-manager's own pom.xml already keeps (see its own
        cloudforge-manager-deployment.version comment). -->
   <properties>
-    <cfc-core.version>3.2.14-SNAPSHOT</cfc-core.version>
+    <cfc-core.version>3.2.15-SNAPSHOT</cfc-core.version>
     <cloudforge-manager-deployment.version>3.2.10-SNAPSHOT</cloudforge-manager-deployment.version>
   </properties>
 
