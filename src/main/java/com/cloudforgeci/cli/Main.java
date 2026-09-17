@@ -3,11 +3,12 @@ package com.cloudforgeci.cli;
 import java.util.Arrays;
 
 /**
- * Dispatches to this tool's two subcommands: {@code deploy} (synth+deploy an application,
- * {@link DeployCommand}) and {@code emulator} (start/stop/restart/status a local MiniStack/
- * LocalStack emulator, {@link EmulatorCommand}). Both speak the same JSON-lines-on-stdout
- * protocol, so a caller streaming this process's output parses one line format regardless of
- * which subcommand ran.
+ * Dispatches to this tool's subcommands: {@code deploy} (synth+deploy an application, {@link
+ * DeployCommand}), {@code emulator} (start/stop/restart/status a local MiniStack/LocalStack
+ * emulator, {@link EmulatorCommand}), and {@code marketplace-export-template} (synth-only, the
+ * static CloudFormation template an AWS Marketplace listing hosts, {@link
+ * MarketplaceExportCommand}). All three speak the same JSON-lines-on-stdout protocol, so a caller
+ * streaming this process's output parses one line format regardless of which subcommand ran.
  */
 public final class Main {
 
@@ -24,6 +25,7 @@ public final class Main {
         int exitCode = switch (subcommand) {
             case "deploy" -> DeployCommand.run(rest);
             case "emulator" -> EmulatorCommand.run(rest);
+            case "marketplace-export-template" -> MarketplaceExportCommand.run(rest);
             default -> {
                 Json.emit("usage", "error", java.util.Map.of("message", "Unknown subcommand: " + subcommand + "\n" + usage()));
                 yield 1;
@@ -36,6 +38,8 @@ public final class Main {
         return "Usage:\n"
             + "  cloudforge-cli deploy --context <deployment-context.json> --target <ministack|localstack>\n"
             + "  cloudforge-cli emulator <start|stop|restart|status> --target <ministack|localstack>\n"
-            + "  cloudforge-cli emulator status  (no --target: reports both)";
+            + "  cloudforge-cli emulator status  (no --target: reports both)\n"
+            + "  cloudforge-cli marketplace-export-template --context <deployment-context.json> "
+            + "[--output <file-or-directory>]";
     }
 }
