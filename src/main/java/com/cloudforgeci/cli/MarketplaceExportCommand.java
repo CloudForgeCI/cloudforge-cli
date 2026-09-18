@@ -18,11 +18,13 @@ import java.util.Map;
  * copy this command produces once at publish time, never {@code cdk deploy}'d live the way
  * {@link DeployCommand}'s local-emulator bootstrap or Manager's own self-deploy are.
  *
- * <p>The supplied context file's {@code marketplaceProductCode} is baked into the exported
- * template as-is (see {@link ManagerOperatorIamSupport#marketplaceEntitlementStatement}) — a
- * Marketplace listing has exactly one product code decided at listing-creation time, so this
- * command doesn't invent or validate one, it just requires the context file already carry the
- * real one before export.</p>
+ * <p>The supplied context file's {@code marketplaceDeploymentEnabled} flag is baked into the
+ * exported template as-is (see {@link ManagerOperatorIamSupport#marketplaceEntitlementStatement}).
+ * The actual product code cloudforge-manager checks at runtime is never sourced from here, or
+ * from any deploy-time config at all — it's a constant compiled into cloudforge-manager itself
+ * (see {@code MarketplaceConfiguration.PRODUCT_CODE}'s javadoc for why). This command's job is
+ * only to confirm the flag that turns the check on is actually set, not to carry a product
+ * code.</p>
  */
 final class MarketplaceExportCommand {
 
@@ -57,11 +59,12 @@ final class MarketplaceExportCommand {
                     + "listing, not a per-application one."));
             return 1;
         }
-        if (config.marketplaceProductCode == null || config.marketplaceProductCode.isBlank()) {
+        if (!Boolean.TRUE.equals(config.marketplaceDeploymentEnabled)) {
             Json.emit("load", "error", Map.of("message",
-                "marketplaceProductCode is not set in " + contextFile + " — set it to this "
-                    + "listing's real AWS Marketplace product code before exporting, so the "
-                    + "template that ships to customers already carries it."));
+                "marketplaceDeploymentEnabled is not set in " + contextFile + " — set it to "
+                    + "true before exporting, so the template that ships to customers starts "
+                    + "the entitlement check. The product code it checks is compiled into "
+                    + "cloudforge-manager itself, not sourced from this context file."));
             return 1;
         }
 
@@ -83,8 +86,7 @@ final class MarketplaceExportCommand {
             Files.copy(synthesis.templateFile(), destination, StandardCopyOption.REPLACE_EXISTING);
             Json.emit("synth", "complete", Map.of(
                 "stackName", synthesis.stackName(),
-                "templateFile", destination.toString(),
-                "productCode", config.marketplaceProductCode));
+                "templateFile", destination.toString()));
             return 0;
         } catch (IOException e) {
             Json.emit("synth", "error", Map.of("message",
